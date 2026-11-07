@@ -37,12 +37,12 @@ class Story extends Phaser.Scene {
     constructor() { super('Story'); }
 
     preload() {
-        // Ładujemy grafikę Twojego bohatera
-        this.load.image('player', 'assets/player.png');
+        this.load.spritesheet('player', 'assets/player_anim.png', { frameWidth: 120, frameHeight: 120 });
     }
 
     create() {
         this.highestFloor = 0;
+        this.isDead = false;
         this.targetFloor = 100; // Np. 100 pięter do szczytu Gdańska 19
         this.gameWon = false;
 
@@ -95,11 +95,12 @@ class Endless extends Phaser.Scene {
     constructor() { super('Endless'); }
 
     preload() {
-        this.load.image('player', 'assets/player.png');
+        this.load.spritesheet('player', 'assets/player_anim.png', { frameWidth: 120, frameHeight: 120 });
     }
-
+    
     create() {
         this.highestFloor = 0;
+        this.isDead = false;
         this.currentFloorIndex = 0;
         this.nextPlatformY = 630 - 120; 
 
@@ -179,11 +180,56 @@ function setupPlayerAndPhysics(scene) {
     scene.physics.world.setBounds(0, -2000000, 360, 2000000 + 640);
     scene.cameras.main.setBounds(0, -2000000, 360, 2000000 + 640);
 
-    // Sprawdzamy czy załadowano grafikę player.png; jeśli nie, tworzymy awaryjny prostokąt
     if (scene.textures.exists('player')) {
         scene.player = scene.physics.add.sprite(180, 500, 'player');
-        // Dopasowanie rozmiaru wyświetlania do ok. 40x40 jeśli sprite ma inne wymiary
-        scene.player.setDisplaySize(40, 40);
+        
+        // POWIĘKSZENIE POSTACI:
+        scene.player.setDisplaySize(80, 80); 
+        scene.player.setSize(120, 120); // Dopasowanie hitboxa do kwadratów ze sprite sheetu
+        
+        // --- TWORZENIE ANIMACJI ---
+        if (!scene.anims.exists('idle')) {
+            scene.anims.create({
+                key: 'idle',
+                frames: scene.anims.generateFrameNumbers('player', { start: 0, end: 1 }),
+                frameRate: 4,
+                repeat: -1 
+            });
+        }
+        if (!scene.anims.exists('prepare')) {
+            scene.anims.create({
+                key: 'prepare',
+                frames: scene.anims.generateFrameNumbers('player', { start: 2, end: 3 }), 
+                frameRate: 10,
+                repeat: 0 
+            });
+        }
+        if (!scene.anims.exists('run')) {
+            scene.anims.create({
+                key: 'run',
+                frames: scene.anims.generateFrameNumbers('player', { start: 4, end: 6 }), 
+                frameRate: 12,
+                repeat: -1
+            });
+        }
+        if (!scene.anims.exists('jump')) {
+            scene.anims.create({
+                key: 'jump',
+                frames: scene.anims.generateFrameNumbers('player', { start: 7, end: 8 }), 
+                frameRate: 8,
+                repeat: -1
+            });
+        }
+        if (!scene.anims.exists('fall')) {
+            scene.anims.create({
+                key: 'fall',
+                frames: [{ key: 'player', frame: 9 }], 
+                frameRate: 1,
+                repeat: 0
+            });
+        }
+
+        scene.player.play('idle'); 
     } else {
         let playerRect = scene.add.rectangle(180, 500, 32, 32, 0xe74c3c);
         scene.player = scene.physics.add.existing(playerRect);
@@ -265,12 +311,19 @@ function createMobileControls(scene) {
 }
 
 function handlePlayerMovement(scene) {
+    // Jeśli gracz jest martwy i swobodnie spada (po przegranej), blokujemy sterowanie i zmianę animacji
+    if (scene.isDead) return; 
+
+    let moving = false;
+
     if (scene.cursors.left.isDown || scene.mobileKeys.joyX < -0.2) {
         scene.player.body.setAccelerationX(-1500);
-        if (scene.player.setFlipX) scene.player.setFlipX(true); // Obrót postaci w lewo
+        if (scene.player.setFlipX) scene.player.setFlipX(true);
+        moving = true;
     } else if (scene.cursors.right.isDown || scene.mobileKeys.joyX > 0.2) {
         scene.player.body.setAccelerationX(1500);
-        if (scene.player.setFlipX) scene.player.setFlipX(false); // Obrót postaci w prawo
+        if (scene.player.setFlipX) scene.player.setFlipX(false);
+        moving = true;
     } else {
         scene.player.body.setAccelerationX(0);
     }
@@ -278,9 +331,39 @@ function handlePlayerMovement(scene) {
     if ((scene.cursors.up.isDown || scene.mobileKeys.up) && scene.player.body.touching.down) {
         scene.player.body.setVelocityY(-900);
     }
+
+    // --- ZAKTUALIZOWANA LOGIKA ANIMACJI ---
+    if (scene.textures.exists('player')) {
+        let currentAnim = scene.player.anims.currentAnim?.key;
+
+        if (!scene.player.body.touching.down) {
+            // W powietrzu
+            if (currentAnim !== 'jump') scene.player.play('jump');
+        } 
+        else if (moving) {
+            // Ruch na ziemi
+            if (currentAnim === 'idle') {
+                scene.player.play('prepare');
+            } else if (currentAnim === 'prepare' && scene.player.anims.getProgress() === 1) {
+                scene.player.play('run');
+            } else if (currentAnim !== 'prepare' && currentAnim !== 'run') {
+                scene.player.play('run'); // Gdy np. biegnie tuż po wylądowaniu ze skoku
+            }
+        } 
+        else {
+            // Spoczynek na ziemi
+            // Zmiana: gdy wyląduje z 'jump' i nie ma ruchu, od razu przechodzi do 'idle' (pomijamy 'fall')
+            if (currentAnim !== 'idle') {
+                scene.player.play('idle');
+            }
+        }
+    }
 }
 
 function updateCameraAndScores(scene, isEndless) {
+    // Jeśli gracz już zginął, nie wykonujemy reszty logiki kamery i punktacji
+    if (scene.isDead) return;
+
     let currentFloor = Math.max(0, Math.floor((630 - scene.player.y) / 120));
     
     if (currentFloor > scene.highestFloor) {
@@ -290,10 +373,11 @@ function updateCameraAndScores(scene, isEndless) {
         } else {
             scene.scoreText.setText('Piętro: ' + scene.highestFloor + ' / ' + scene.targetFloor);
             
+            // Warunek wygranej w trybie Story
             if (scene.highestFloor >= scene.targetFloor && !scene.gameWon) {
                 scene.gameWon = true;
                 scene.add.text(180, scene.cameras.main.scrollY + 320, 'WYGRANA!\nWitamy na Gdańskiej 19', { fontSize: '28px', fill: '#2ecc71', align: 'center', backgroundColor: '#000' }).setOrigin(0.5);
-                setTimeout(() => scene.scene.start('Menu'), 3000); 
+                setTimeout(() => scene.scene.start('Menu'), 3000); // Powrót do menu po 3 sekundach
             }
         }
     }
@@ -303,9 +387,26 @@ function updateCameraAndScores(scene, isEndless) {
         scene.cameras.main.scrollY = targetCameraY;
     }
 
+    // Warunek przegranej
     if (scene.player.y > scene.cameras.main.scrollY + config.height + 32) {
-        scene.cameras.main.scrollY = 0; 
-        scene.scene.start('Menu'); 
+        scene.isDead = true; 
+        
+        scene.player.body.checkCollision.none = true;
+        scene.player.body.setCollideWorldBounds(false);
+        
+        // Zmiana animacji na rozklapaną klatkę nr 10
+        if (scene.textures.exists('player')) {
+            scene.player.play('fall');
+        }
+
+        scene.player.body.setVelocityY(-1200);
+        scene.player.body.setAccelerationX(0);
+        scene.player.body.setVelocityX(0);
+
+        setTimeout(() => {
+            scene.cameras.main.scrollY = 0; 
+            scene.scene.start('Menu');
+        }, 2000); 
     }
 }
 
