@@ -1,6 +1,8 @@
 const SETTINGS = {
     floatingJoystick: true,
-    devMode: false
+    devMode: true, // Wymusza działanie narzędzi Dev Menu
+    showHitboxes: false,
+    showStats: false
 };
 
 // 1. SCENA MENU GŁÓWNEGO
@@ -77,16 +79,25 @@ class Story extends Phaser.Scene {
                 plat.body.checkCollision.right = false;
             }
         }
-
+        
         setupPlayerAndPhysics(this);
         this.scoreText = this.add.text(20, 20, 'Piętro: 0 / ' + this.targetFloor, { fontSize: '20px', fill: '#ffffff' }).setScrollFactor(0);
+        
+        // Włączenie rysowania hitboxów na żądanie (Tryb Dev)
+        if (SETTINGS.showHitboxes) {
+            this.physics.world.createDebugGraphic();
+        }
+
+        setupComboSystem(this);
+ 
     }
 
-    update() {
-        if (this.gameWon) return;
+    update(time, delta) {
+        if (this.gameWon || this.isDead) return;
         handlePlayerMovement(this);
         updateCameraAndScores(this, false); 
-        updateParallax(this);
+        handleCombo(this, delta); // NOWOŚĆ
+        if (typeof updateTelemetry === 'function') updateTelemetry(this);
     }
 }
 
@@ -117,17 +128,26 @@ class Endless extends Phaser.Scene {
 
         setupPlayerAndPhysics(this);
         this.scoreText = this.add.text(20, 20, 'Piętro: 0', { fontSize: '24px', fill: '#ffffff' }).setScrollFactor(0);
+
+        // Włączenie rysowania hitboxów na żądanie (Tryb Dev)
+        if (SETTINGS.showHitboxes) {
+            this.physics.world.createDebugGraphic();
+        }
+
+        setupComboSystem(this);
     }
 
-    update() {
+    update(time, delta) {
+        if (this.isDead) return;
         handlePlayerMovement(this);
         updateCameraAndScores(this, true); 
-
+        
         while (this.cameras.main.scrollY < this.nextPlatformY + 640) {
             this.generatePlatform();
         }
-
-        updateParallax(this);
+        
+        handleCombo(this, delta); // NOWOŚĆ
+        if (typeof updateTelemetry === 'function') updateTelemetry(this);
     }
 
     generatePlatform() {
@@ -183,11 +203,12 @@ function setupPlayerAndPhysics(scene) {
     if (scene.textures.exists('player')) {
         scene.player = scene.physics.add.sprite(180, 500, 'player');
         
-        // POWIĘKSZENIE POSTACI:
+        // Dopasowanie wizualne i naprawa hitboxa
         scene.player.setDisplaySize(80, 80); 
-        scene.player.setSize(120, 120); // Dopasowanie hitboxa do kwadratów ze sprite sheetu
+        scene.player.body.setSize(50, 70); 
+        scene.player.body.setOffset(35, 50);
         
-        // --- TWORZENIE ANIMACJI ---
+        // --- PEŁNA INICJALIZACJA ANIMACJI ---
         if (!scene.anims.exists('idle')) {
             scene.anims.create({
                 key: 'idle',
@@ -246,18 +267,66 @@ function setupPlayerAndPhysics(scene) {
     scene.mobileKeys = { joyX: 0, up: false };
     createMobileControls(scene);
 
+    // --- ROZWIJANE MENU DEWELOPERSKIE ---
     if (SETTINGS.devMode) {
-        let btnDevUp = scene.add.text(350, 10, '🚀 +10 PIĘTER', { 
-            fontSize: '16px', fill: '#ffffff', backgroundColor: '#c0392b', padding: 8, fontStyle: 'bold' 
-        }).setOrigin(1, 0).setScrollFactor(0).setInteractive();
+        // Kontener menu
+        let devContainer = scene.add.container(config.width - 150, 40).setScrollFactor(0).setDepth(100);
+        let menuBg = scene.add.rectangle(0, 0, 140, 110, 0x000000, 0.8).setOrigin(0, 0);
+        devContainer.add(menuBg);
         
+        let title = scene.add.text(5, 5, '🛠 DEV MENU', { fontSize: '14px', fill: '#f1c40f', fontStyle: 'bold' });
+        devContainer.add(title);
+
+        // Przycisk koła zębatego
+        let btnToggle = scene.add.text(config.width - 35, 10, '⚙️', { fontSize: '24px' }).setScrollFactor(0).setInteractive().setDepth(101);
+        devContainer.setVisible(false);
+        
+        btnToggle.on('pointerdown', () => {
+            devContainer.setVisible(!devContainer.visible);
+        });
+
+        const getHitboxText = () => SETTINGS.showHitboxes ? '[X] Hitboxy' : '[ ] Hitboxy';
+        let btnHitboxes = scene.add.text(5, 30, getHitboxText(), { fontSize: '12px', fill: '#fff' }).setInteractive();
+        btnHitboxes.on('pointerdown', () => {
+            SETTINGS.showHitboxes = !SETTINGS.showHitboxes;
+            btnHitboxes.setText(getHitboxText());
+            
+            if (SETTINGS.showHitboxes) {
+                if (!scene.physics.world.debugGraphic) scene.physics.world.createDebugGraphic();
+                scene.physics.world.drawDebug = true;
+            } else {
+                scene.physics.world.drawDebug = false;
+                if (scene.physics.world.debugGraphic) scene.physics.world.debugGraphic.clear();
+            }
+        });
+        devContainer.add(btnHitboxes);
+
+        const getStatsText = () => SETTINGS.showStats ? '[X] Telemetria' : '[ ] Telemetria';
+        let btnStats = scene.add.text(5, 55, getStatsText(), { fontSize: '12px', fill: '#fff' }).setInteractive();
+        btnStats.on('pointerdown', () => {
+            SETTINGS.showStats = !SETTINGS.showStats;
+            btnStats.setText(getStatsText());
+        });
+        devContainer.add(btnStats);
+
+        let btnDevUp = scene.add.text(5, 80, '🚀 +10 PIĘTER', { fontSize: '12px', fill: '#fff', backgroundColor: '#c0392b', padding: 4 }).setInteractive();
         btnDevUp.on('pointerdown', () => {
             scene.player.y -= 1200; 
             scene.player.body.setVelocityY(-400); 
             scene.cameras.main.scrollY = scene.player.y - config.height / 2; 
         });
+        devContainer.add(btnDevUp);
+
+        scene.devStatsText = scene.add.text(10, 50, '', { fontSize: '12px', fill: '#00ff00', backgroundColor: '#000000aa', padding: 5 }).setScrollFactor(0).setDepth(99);
+        scene.devStatsText.setVisible(SETTINGS.showStats);
+        
+        if (SETTINGS.showHitboxes) {
+            scene.physics.world.createDebugGraphic();
+            scene.physics.world.drawDebug = true;
+        }
     }
 }
+
 
 function createMobileControls(scene) {
     scene.input.addPointer(2);
@@ -311,11 +380,12 @@ function createMobileControls(scene) {
 }
 
 function handlePlayerMovement(scene) {
-    // Jeśli gracz jest martwy i swobodnie spada (po przegranej), blokujemy sterowanie i zmianę animacji
     if (scene.isDead) return; 
 
     let moving = false;
+    let isJumpPressed = scene.cursors.up.isDown || scene.mobileKeys.up;
 
+    // 1. Ruch na boki
     if (scene.cursors.left.isDown || scene.mobileKeys.joyX < -0.2) {
         scene.player.body.setAccelerationX(-1500);
         if (scene.player.setFlipX) scene.player.setFlipX(true);
@@ -328,36 +398,48 @@ function handlePlayerMovement(scene) {
         scene.player.body.setAccelerationX(0);
     }
 
-    if ((scene.cursors.up.isDown || scene.mobileKeys.up) && scene.player.body.touching.down) {
-        scene.player.body.setVelocityY(-900);
+    // 2. INICJACJA SKOKU (zależna od pędu)
+    if (isJumpPressed && scene.player.body.touching.down) {
+        // Pobieramy absolutną prędkość poziomą (od 0 do max 600)
+        let speedX = Math.abs(scene.player.body.velocity.x);
+        
+        // Baza to -750 (zwykły skok z miejsca na 1-2 piętra). 
+        // Dodajemy bonus za rozpęd (np. przy max prędkości 600 * 0.6 = +360 siły).
+        // Max siła skoku wyniesie wtedy ok. -1110.
+        let jumpPower = -750 - (speedX * 0.6); 
+        
+        scene.player.body.setVelocityY(jumpPower);
     }
 
-    // --- ZAKTUALIZOWANA LOGIKA ANIMACJI ---
+    // 3. KONTROLA WYSOKOŚCI SKOKU (Variable Jump)
+    // Jeśli gracz leci w górę (Y < 0), ale puścił już przycisk/ekran, płynnie ucinamy pęd
+    if (!isJumpPressed && scene.player.body.velocity.y < 0) {
+        scene.player.body.setVelocityY(scene.player.body.velocity.y * 0.9); 
+    }
+
+    // --- LOGIKA ANIMACJI ---
     if (scene.textures.exists('player')) {
         let currentAnim = scene.player.anims.currentAnim?.key;
 
         if (!scene.player.body.touching.down) {
-            // W powietrzu
             if (currentAnim !== 'jump') scene.player.play('jump');
         } 
         else if (moving) {
-            // Ruch na ziemi
             if (currentAnim === 'idle') {
                 scene.player.play('prepare');
             } else if (currentAnim === 'prepare' && scene.player.anims.getProgress() === 1) {
                 scene.player.play('run');
             } else if (currentAnim !== 'prepare' && currentAnim !== 'run') {
-                scene.player.play('run'); // Gdy np. biegnie tuż po wylądowaniu ze skoku
+                scene.player.play('run'); 
             }
         } 
         else {
-            // Spoczynek na ziemi
-            // Zmiana: gdy wyląduje z 'jump' i nie ma ruchu, od razu przechodzi do 'idle' (pomijamy 'fall')
             if (currentAnim !== 'idle') {
                 scene.player.play('idle');
             }
         }
     }
+    updateTelemetry(scene);
 }
 
 function updateCameraAndScores(scene, isEndless) {
@@ -410,6 +492,125 @@ function updateCameraAndScores(scene, isEndless) {
     }
 }
 
+function updateTelemetry(scene) {
+    if (!SETTINGS.devMode || !scene.devStatsText) return;
+    
+    if (!SETTINGS.showStats) {
+        scene.devStatsText.setVisible(false);
+        return;
+    }
+    
+    scene.devStatsText.setVisible(true);
+
+    let currentSpeedX = Math.abs(scene.player.body.velocity.x).toFixed(0);
+
+    // Rejestrowanie wysokości bieżącego skoku
+    if (!scene.player.body.touching.down && scene.player.body.velocity.y < 0) {
+        if (scene.player.jumpStartY === undefined) {
+            scene.player.jumpStartY = scene.player.y;
+            scene.player.jumpStartXSpeed = currentSpeedX;
+        }
+        scene.player.currentJumpHeight = scene.player.jumpStartY - scene.player.y;
+    } else if (scene.player.body.touching.down) {
+        scene.player.jumpStartY = undefined; 
+    }
+
+    let lastHeight = (scene.player.currentJumpHeight || 0).toFixed(0);
+    let lastSpeed = (scene.player.jumpStartXSpeed || 0);
+
+    scene.devStatsText.setText(
+        `PREDKOSC X: ${currentSpeedX} / 600 px/s\n` +
+        `OSTATNI SKOK: ${lastHeight} px\n` +
+        `(Pęd przy wybiciu: ${lastSpeed})`
+    );
+}
+
+// --- SYSTEM COMBO ---
+
+function setupComboSystem(scene) {
+    scene.comboCount = 0;
+    scene.comboTimer = 0;
+    scene.maxComboTime = 2000; // 2 sekundy na kontynuację combo
+    scene.lastLandedFloor = 0;
+    scene.player.wasTouchingDown = true;
+    
+    // Tekst wyświetlający aktualne combo na środku ekranu
+    scene.comboText = scene.add.text(180, 150, '', {
+        fontSize: '36px', fill: '#f1c40f', fontStyle: 'bold', align: 'center', stroke: '#000', strokeThickness: 5
+    }).setOrigin(0.5).setScrollFactor(0).setAlpha(0).setDepth(100);
+}
+
+function handleCombo(scene, delta) {
+    // Obliczamy na którym piętrze fizycznie znajduje się gracz
+    let currentFloor = Math.max(0, Math.floor((630 - scene.player.y) / 120));
+
+    // Moment lądowania na platformie
+    if (scene.player.body.touching.down) {
+        if (!scene.player.wasTouchingDown) { // Właśnie wylądował
+            let floorsJumped = currentFloor - scene.lastLandedFloor;
+
+            // Inicjacja lub kontynuacja combo (skok o min. 2 piętra)
+            if (floorsJumped >= 2) {
+                scene.comboCount += floorsJumped;
+                scene.comboTimer = scene.maxComboTime;
+                
+                scene.comboText.setText('COMBO x' + scene.comboCount + '!');
+                scene.comboText.setAlpha(1);
+                scene.comboText.y = 150;
+                
+                // Efekt "pop" (powiększenia) przy uderzeniu
+                scene.tweens.add({
+                    targets: scene.comboText,
+                    scale: { from: 1.5, to: 1 },
+                    duration: 200,
+                    ease: 'Back.easeOut'
+                });
+            } 
+            // Jeśli gracz podskoczył tylko o 1 piętro lub spadł, a miał aktywne combo - kończymy je
+            else if ((floorsJumped <= 1) && scene.comboCount > 0) {
+                cashInCombo(scene);
+            }
+            
+            scene.lastLandedFloor = currentFloor;
+        }
+    }
+    scene.player.wasTouchingDown = scene.player.body.touching.down;
+
+    // Odliczanie czasu combo
+    if (scene.comboCount > 0) {
+        scene.comboTimer -= delta;
+        
+        // Cieniowanie tekstu pokazujące uciekający czas
+        scene.comboText.setAlpha(scene.comboTimer / scene.maxComboTime);
+        
+        if (scene.comboTimer <= 0) {
+            cashInCombo(scene);
+        }
+    }
+}
+
+function cashInCombo(scene) {
+    if (scene.comboCount > 0) {
+        // Punktacja rodem z Icy Tower (kwadrat ilości pięter)
+        let points = scene.comboCount * scene.comboCount; 
+        
+        scene.comboText.setText('+' + points + ' PKT!');
+        scene.comboText.setAlpha(1);
+        
+        // Animacja unoszącego się i znikającego napisu z punktami
+        scene.tweens.add({
+            targets: scene.comboText,
+            y: scene.comboText.y - 50,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power1'
+        });
+        
+        // Docelowo tutaj dodasz zmienną globalnego wyniku: scene.score += points
+        scene.comboCount = 0;
+    }
+}
+
 const config = {
     type: Phaser.AUTO,
     width: 360,
@@ -428,5 +629,8 @@ const config = {
     },
     scene: [Menu, Story, Endless] 
 };
+
+
+
 
 const game = new Phaser.Game(config);
