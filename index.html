@@ -2,7 +2,8 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Bezwzględna blokada skalowania i ominięcie "notcha" -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Gastromachina Tower</title>
     <style>
         body {
@@ -13,12 +14,18 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            /* Zablokowanie przeciągania strony, zoomu i odświeżania */
+            overscroll-behavior: none;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         canvas {
             display: block;
+            outline: none;
         }
     </style>
-    <!-- Importujemy Phasera -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 </head>
 <body>

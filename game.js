@@ -1,6 +1,6 @@
 const SETTINGS = {
     floatingJoystick: true,
-    devMode: true, // Wymusza działanie narzędzi Dev Menu
+    devMode: true,
     showHitboxes: false,
     showStats: false
 };
@@ -34,7 +34,7 @@ class Menu extends Phaser.Scene {
     }
 }
 
-// 2. SCENA TRYBU STORY (Meta na szczycie Gdańska 19)
+// 2. SCENA TRYBU STORY
 class Story extends Phaser.Scene {
     constructor() { super('Story'); }
 
@@ -44,60 +44,45 @@ class Story extends Phaser.Scene {
 
     create() {
         this.highestFloor = 0;
-        this.isDead = false;
-        this.targetFloor = 100; // Np. 100 pięter do szczytu Gdańska 19
+        this.targetFloor = 40; 
         this.gameWon = false;
+        this.isDead = false;
 
         setupBackgroundLayers(this);
-
         this.platforms = this.physics.add.staticGroup();
+        this.uiCamera.ignore(this.platforms); // UI Camera nie rysuje platform
 
-        // Podłoga startowa
-        let floorRect = this.add.rectangle(180, 630, 360, 20, 0x2ecc71);
+        let floorRect = this.add.rectangle(180, 480, 360, 20, 0x2ecc71);
         this.platforms.add(floorRect);
         
         for (let i = 1; i <= this.targetFloor; i++) {
-            let y = 630 - (i * 120);
+            let width = Phaser.Math.Between(80, 160);
+            let x = Phaser.Math.Between(width / 2, 360 - (width / 2));
+            let y = 480 - (i * 120);
 
-            // Co 50 pięter pełna platforma od brzegu do brzegu
-            if (i % 50 === 0) {
-                let fullPlat = this.add.rectangle(180, y, 360, 24, 0x9b59b6);
-                this.platforms.add(fullPlat);
-                fullPlat.body.checkCollision.down = false;
-                fullPlat.body.checkCollision.left = false;
-                fullPlat.body.checkCollision.right = false;
+            let plat = this.add.rectangle(x, y, width, 20, 0xf1c40f);
+            this.platforms.add(plat);
+            plat.body.checkCollision.down = false;
+            plat.body.checkCollision.left = false;
+            plat.body.checkCollision.right = false;
 
-                let label = (i === this.targetFloor) ? 'SZCZYT GDAŃSKA 19!' : `PIĘTRO ${i} - NOWA ERA`;
-                this.add.text(180, y - 25, label, { fontSize: '16px', fill: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
-            } else {
-                let width = Phaser.Math.Between(80, 160);
-                let x = Phaser.Math.Between(width / 2 + 20, 360 - (width / 2) - 20); // Margines na ściany wieży
-                let plat = this.add.rectangle(x, y, width, 20, 0xf1c40f);
-                this.platforms.add(plat);
-                plat.body.checkCollision.down = false;
-                plat.body.checkCollision.left = false;
-                plat.body.checkCollision.right = false;
+            if (i === this.targetFloor) {
+                plat.fillColor = 0x9b59b6; 
+                let winText = this.add.text(x, y - 40, 'GDAŃSKA 19!', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
+                this.uiCamera.ignore(winText);
             }
         }
-        
-        setupPlayerAndPhysics(this);
-        this.scoreText = this.add.text(20, 20, 'Piętro: 0 / ' + this.targetFloor, { fontSize: '20px', fill: '#ffffff' }).setScrollFactor(0);
-        
-        // Włączenie rysowania hitboxów na żądanie (Tryb Dev)
-        if (SETTINGS.showHitboxes) {
-            this.physics.world.createDebugGraphic();
-        }
 
-        setupComboSystem(this);
- 
+        setupPlayerAndPhysics(this);
+        
+        this.scoreText = this.add.text(20, 20, 'Piętro: 0 / ' + this.targetFloor, { fontSize: '20px', fill: '#ffffff' }).setScrollFactor(0);
+        this.uiCamera.ignore(this.scoreText); // UI Camera nie dubluje napisu
     }
 
-    update(time, delta) {
-        if (this.gameWon || this.isDead) return;
+    update() {
+        if (this.gameWon) return;
         handlePlayerMovement(this);
         updateCameraAndScores(this, false); 
-        handleCombo(this, delta); // NOWOŚĆ
-        if (typeof updateTelemetry === 'function') updateTelemetry(this);
     }
 }
 
@@ -108,168 +93,112 @@ class Endless extends Phaser.Scene {
     preload() {
         this.load.spritesheet('player', 'assets/player_anim.png', { frameWidth: 120, frameHeight: 120 });
     }
-    
+
     create() {
         this.highestFloor = 0;
+        this.nextPlatformY = 480 - 120; 
         this.isDead = false;
-        this.currentFloorIndex = 0;
-        this.nextPlatformY = 630 - 120; 
 
         setupBackgroundLayers(this);
-
         this.platforms = this.physics.add.staticGroup();
+        this.uiCamera.ignore(this.platforms);
 
-        let floorRect = this.add.rectangle(180, 630, 360, 20, 0x2ecc71);
+        let floorRect = this.add.rectangle(180, 480, 360, 20, 0x2ecc71);
         this.platforms.add(floorRect);
 
-        for (let i = 1; i < 12; i++) {
+        for (let i = 1; i < 10; i++) {
             this.generatePlatform();
         }
 
         setupPlayerAndPhysics(this);
+        
         this.scoreText = this.add.text(20, 20, 'Piętro: 0', { fontSize: '24px', fill: '#ffffff' }).setScrollFactor(0);
-
-        // Włączenie rysowania hitboxów na żądanie (Tryb Dev)
-        if (SETTINGS.showHitboxes) {
-            this.physics.world.createDebugGraphic();
-        }
-
-        setupComboSystem(this);
+        this.uiCamera.ignore(this.scoreText);
     }
 
-    update(time, delta) {
-        if (this.isDead) return;
+    update() {
         handlePlayerMovement(this);
         updateCameraAndScores(this, true); 
-        
-        while (this.cameras.main.scrollY < this.nextPlatformY + 640) {
+
+        if (this.cameras.main.scrollY < this.nextPlatformY + 500) {
             this.generatePlatform();
         }
-        
-        handleCombo(this, delta); // NOWOŚĆ
-        if (typeof updateTelemetry === 'function') updateTelemetry(this);
     }
 
     generatePlatform() {
-        this.currentFloorIndex++;
-        let y = this.nextPlatformY;
-
-        // Co 50 pięter pełna platforma od brzegu do brzegu
-        if (this.currentFloorIndex % 50 === 0) {
-            let fullPlat = this.add.rectangle(180, y, 360, 24, 0x9b59b6);
-            this.platforms.add(fullPlat);
-            fullPlat.body.checkCollision.down = false;
-            fullPlat.body.checkCollision.left = false;
-            fullPlat.body.checkCollision.right = false;
-
-            this.add.text(180, y - 25, `PIĘTRO ${this.currentFloorIndex} - NOWA ERA`, { fontSize: '16px', fill: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
-        } else {
-            let width = Phaser.Math.Between(80, 160);
-            let x = Phaser.Math.Between(width / 2 + 20, 360 - (width / 2) - 20);
-            let plat = this.add.rectangle(x, y, width, 20, 0xe67e22);
-            this.platforms.add(plat);
-            plat.body.checkCollision.down = false;
-            plat.body.checkCollision.left = false;
-            plat.body.checkCollision.right = false;
-        }
+        let width = Phaser.Math.Between(80, 160);
+        let x = Phaser.Math.Between(width / 2, 360 - (width / 2));
+        
+        let plat = this.add.rectangle(x, this.nextPlatformY, width, 20, 0xe67e22);
+        this.platforms.add(plat);
+        plat.body.checkCollision.down = false;
+        plat.body.checkCollision.left = false;
+        plat.body.checkCollision.right = false;
 
         this.nextPlatformY -= 120; 
     }
 }
 
-// --- WARSTWY TŁA I PARALAKSA ---
-
+// --- WARSTWY TŁA I KAMERY (PRAWIDŁOWY SPLIT) ---
 function setupBackgroundLayers(scene) {
-    // Odległe tło (przesuwa się powoli: factor 0.3)
-    // Na razie prosta siatka/kolor pod grafikę docelową
-    scene.bgFar = scene.add.rectangle(180, 320, 360, 640, 0x1a252f).setScrollFactor(0);
+    // 1. Główna kamera jest sztywno ucięta na 500 pikselach wysokości
+    scene.cameras.main.setViewport(0, 0, 360, 500);
 
-    // Przednia warstwa: boki wieży (lewa i prawa ściana) podążające z graczem
-    scene.wallLeft = scene.add.rectangle(10, 320, 20, 640, 0x2c3e50).setScrollFactor(0);
-    scene.wallRight = scene.add.rectangle(350, 320, 20, 640, 0x2c3e50).setScrollFactor(0);
-}
+    // 2. Tworzymy dedykowaną UI Kamerę dla obszaru Y 500-640
+    scene.uiCamera = scene.cameras.add(0, 500, 360, 140);
+    scene.uiCamera.scrollY = 500; // Mapowanie współrzędnych świata na ten wycinek
+    scene.uiCamera.setBackgroundColor('#181818');
 
-function updateParallax(scene) {
-    // Gdy podepniemy docelowe tekstury kaflowe (TileSprite), tutaj będziemy sterować ich przesunięciem:
-    // np. scene.bgFar.tilePositionY = scene.cameras.main.scrollY * 0.3;
+    // Elementy widoczne TYLKO dla kamery gry (ignorowane przez UI Kamerę)
+    scene.bgFar = scene.add.rectangle(180, 250, 360, 500, 0x1a252f).setScrollFactor(0);
+    scene.wallLeft = scene.add.rectangle(10, 250, 20, 500, 0x2c3e50).setScrollFactor(0);
+    scene.wallRight = scene.add.rectangle(350, 250, 20, 500, 0x2c3e50).setScrollFactor(0);
+    scene.uiCamera.ignore([scene.bgFar, scene.wallLeft, scene.wallRight]);
+
+    // Elementy UI - znajdują się na Y > 500, więc główna kamera obcięta na 500px i tak ich nie zobaczy
+    scene.consoleBezel = scene.add.rectangle(180, 502, 360, 4, 0x555555);
 }
 
 // --- FUNKCJE FIZYKI I GRACZA ---
-
 function setupPlayerAndPhysics(scene) {
-    scene.physics.world.setBounds(0, -2000000, 360, 2000000 + 640);
-    scene.cameras.main.setBounds(0, -2000000, 360, 2000000 + 640);
+    scene.physics.world.setBounds(0, -2000000, 360, 2000000 + 500);
+    scene.cameras.main.setBounds(0, -2000000, 360, 2000000 + 500);
 
     if (scene.textures.exists('player')) {
-        scene.player = scene.physics.add.sprite(180, 500, 'player');
+        scene.player = scene.physics.add.sprite(180, 400, 'player');
         
-        // Dopasowanie wizualne i naprawa hitboxa
         scene.player.setDisplaySize(80, 80); 
         scene.player.body.setSize(50, 70); 
         scene.player.body.setOffset(35, 50);
         
-        // --- PEŁNA INICJALIZACJA ANIMACJI ---
         if (!scene.anims.exists('idle')) {
-            scene.anims.create({
-                key: 'idle',
-                frames: scene.anims.generateFrameNumbers('player', { start: 0, end: 1 }),
-                frameRate: 4,
-                repeat: -1 
-            });
+            scene.anims.create({ key: 'idle', frames: scene.anims.generateFrameNumbers('player', { start: 0, end: 1 }), frameRate: 4, repeat: -1 });
+            scene.anims.create({ key: 'prepare', frames: scene.anims.generateFrameNumbers('player', { start: 2, end: 3 }), frameRate: 10, repeat: 0 });
+            scene.anims.create({ key: 'run', frames: scene.anims.generateFrameNumbers('player', { start: 4, end: 6 }), frameRate: 12, repeat: -1 });
+            scene.anims.create({ key: 'jump', frames: scene.anims.generateFrameNumbers('player', { start: 7, end: 8 }), frameRate: 8, repeat: -1 });
+            scene.anims.create({ key: 'fall', frames: [{ key: 'player', frame: 9 }], frameRate: 1, repeat: 0 });
         }
-        if (!scene.anims.exists('prepare')) {
-            scene.anims.create({
-                key: 'prepare',
-                frames: scene.anims.generateFrameNumbers('player', { start: 2, end: 3 }), 
-                frameRate: 10,
-                repeat: 0 
-            });
-        }
-        if (!scene.anims.exists('run')) {
-            scene.anims.create({
-                key: 'run',
-                frames: scene.anims.generateFrameNumbers('player', { start: 4, end: 6 }), 
-                frameRate: 12,
-                repeat: -1
-            });
-        }
-        if (!scene.anims.exists('jump')) {
-            scene.anims.create({
-                key: 'jump',
-                frames: scene.anims.generateFrameNumbers('player', { start: 7, end: 8 }), 
-                frameRate: 8,
-                repeat: -1
-            });
-        }
-        if (!scene.anims.exists('fall')) {
-            scene.anims.create({
-                key: 'fall',
-                frames: [{ key: 'player', frame: 9 }], 
-                frameRate: 1,
-                repeat: 0
-            });
-        }
-
         scene.player.play('idle'); 
     } else {
-        let playerRect = scene.add.rectangle(180, 500, 32, 32, 0xe74c3c);
+        let playerRect = scene.add.rectangle(180, 400, 32, 32, 0xe74c3c);
         scene.player = scene.physics.add.existing(playerRect);
     }
     
+    // UI Kamera całkowicie ignoruje postać - nie widać jej gdy spada!
+    scene.uiCamera.ignore(scene.player);
+
     scene.player.body.setBounce(1, 0); 
     scene.player.body.setCollideWorldBounds(true);
     scene.player.body.setMaxVelocity(600, 1200); 
     scene.player.body.setDragX(1000); 
 
     scene.physics.add.collider(scene.player, scene.platforms);
-
     scene.cursors = scene.input.keyboard.createCursorKeys();
+    
     scene.mobileKeys = { joyX: 0, up: false };
     createMobileControls(scene);
 
-    // --- ROZWIJANE MENU DEWELOPERSKIE ---
     if (SETTINGS.devMode) {
-        // Kontener menu
         let devContainer = scene.add.container(config.width - 150, 40).setScrollFactor(0).setDepth(100);
         let menuBg = scene.add.rectangle(0, 0, 140, 110, 0x000000, 0.8).setOrigin(0, 0);
         devContainer.add(menuBg);
@@ -277,13 +206,9 @@ function setupPlayerAndPhysics(scene) {
         let title = scene.add.text(5, 5, '🛠 DEV MENU', { fontSize: '14px', fill: '#f1c40f', fontStyle: 'bold' });
         devContainer.add(title);
 
-        // Przycisk koła zębatego
         let btnToggle = scene.add.text(config.width - 35, 10, '⚙️', { fontSize: '24px' }).setScrollFactor(0).setInteractive().setDepth(101);
         devContainer.setVisible(false);
-        
-        btnToggle.on('pointerdown', () => {
-            devContainer.setVisible(!devContainer.visible);
-        });
+        btnToggle.on('pointerdown', () => devContainer.setVisible(!devContainer.visible));
 
         const getHitboxText = () => SETTINGS.showHitboxes ? '[X] Hitboxy' : '[ ] Hitboxy';
         let btnHitboxes = scene.add.text(5, 30, getHitboxText(), { fontSize: '12px', fill: '#fff' }).setInteractive();
@@ -294,6 +219,7 @@ function setupPlayerAndPhysics(scene) {
             if (SETTINGS.showHitboxes) {
                 if (!scene.physics.world.debugGraphic) scene.physics.world.createDebugGraphic();
                 scene.physics.world.drawDebug = true;
+                scene.uiCamera.ignore(scene.physics.world.debugGraphic); // Hitboxy znikają z panelu UI
             } else {
                 scene.physics.world.drawDebug = false;
                 if (scene.physics.world.debugGraphic) scene.physics.world.debugGraphic.clear();
@@ -313,7 +239,7 @@ function setupPlayerAndPhysics(scene) {
         btnDevUp.on('pointerdown', () => {
             scene.player.y -= 1200; 
             scene.player.body.setVelocityY(-400); 
-            scene.cameras.main.scrollY = scene.player.y - config.height / 2; 
+            scene.cameras.main.scrollY = scene.player.y - 250; 
         });
         devContainer.add(btnDevUp);
 
@@ -323,35 +249,48 @@ function setupPlayerAndPhysics(scene) {
         if (SETTINGS.showHitboxes) {
             scene.physics.world.createDebugGraphic();
             scene.physics.world.drawDebug = true;
+            scene.uiCamera.ignore(scene.physics.world.debugGraphic);
         }
+
+        scene.uiCamera.ignore([devContainer, btnToggle, scene.devStatsText]);
     }
 }
 
-
 function createMobileControls(scene) {
-    scene.input.addPointer(2);
+    // Wersja PC - czysty tekst zamiast przycisków
+    if (scene.sys.game.device.os.desktop) {
+        scene.add.text(180, 570, 'STEROWANIE PC\n[ ◄ ] [ ► ] - Ruch\n[ ▲ ] - Skok', {
+            fontSize: '16px', fill: '#666', align: 'center', fontStyle: 'bold'
+        }).setOrigin(0.5);
+        return;
+    }
 
-    let btnJump = scene.add.circle(300, 570, 40, 0xffffff, 0.3).setScrollFactor(0).setInteractive();
-    let txtJump = scene.add.text(300, 570, 'UP', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0);
+    scene.input.addPointer(2);
+    let isFloating = SETTINGS.floatingJoystick !== false;
+
+    // Przycisk skoku (Używamy współrzędnych świata)
+    let btnJump = scene.add.circle(300, 570, 40, 0xffffff, 0.3).setInteractive();
+    let txtJump = scene.add.text(300, 570, 'UP', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
 
     btnJump.on('pointerdown', () => scene.mobileKeys.up = true);
     btnJump.on('pointerup', () => scene.mobileKeys.up = false);
     btnJump.on('pointerout', () => scene.mobileKeys.up = false);
 
+    // Wirtualny Joystick 
     let startBaseX = 80;  
     let currentBaseX = startBaseX; 
     let joyBaseY = 570;
     let maxDist = 40; 
 
-    let joyBase = scene.add.circle(currentBaseX, joyBaseY, 50, 0xffffff, 0.2).setScrollFactor(0);
-    let joyThumb = scene.add.circle(currentBaseX, joyBaseY, 25, 0xffffff, 0.5).setScrollFactor(0).setInteractive();
+    let joyBase = scene.add.circle(currentBaseX, joyBaseY, 50, 0xffffff, 0.2);
+    let joyThumb = scene.add.circle(currentBaseX, joyBaseY, 25, 0xffffff, 0.5).setInteractive();
     
     scene.input.setDraggable(joyThumb);
 
     scene.input.on('drag', function (pointer, gameObject) {
         if (gameObject !== joyThumb) return;
         
-        if (SETTINGS.floatingJoystick) {
+        if (isFloating) {
             let diffX = pointer.x - currentBaseX;
             if (diffX > maxDist) currentBaseX = pointer.x - maxDist;
             else if (diffX < -maxDist) currentBaseX = pointer.x + maxDist;
@@ -364,7 +303,6 @@ function createMobileControls(scene) {
             currentBaseX = startBaseX;
             joyThumb.x = startBaseX + deltaX;
         }
-
         joyThumb.y = joyBaseY; 
         scene.mobileKeys.joyX = (joyThumb.x - currentBaseX) / maxDist;
     });
@@ -385,7 +323,6 @@ function handlePlayerMovement(scene) {
     let moving = false;
     let isJumpPressed = scene.cursors.up.isDown || scene.mobileKeys.up;
 
-    // 1. Ruch na boki
     if (scene.cursors.left.isDown || scene.mobileKeys.joyX < -0.2) {
         scene.player.body.setAccelerationX(-1500);
         if (scene.player.setFlipX) scene.player.setFlipX(true);
@@ -398,33 +335,22 @@ function handlePlayerMovement(scene) {
         scene.player.body.setAccelerationX(0);
     }
 
-    // 2. INICJACJA SKOKU (zależna od pędu)
     if (isJumpPressed && scene.player.body.touching.down) {
-        // Pobieramy absolutną prędkość poziomą (od 0 do max 600)
         let speedX = Math.abs(scene.player.body.velocity.x);
-        
-        // Baza to -750 (zwykły skok z miejsca na 1-2 piętra). 
-        // Dodajemy bonus za rozpęd (np. przy max prędkości 600 * 0.6 = +360 siły).
-        // Max siła skoku wyniesie wtedy ok. -1110.
         let jumpPower = -750 - (speedX * 0.6); 
-        
         scene.player.body.setVelocityY(jumpPower);
     }
 
-    // 3. KONTROLA WYSOKOŚCI SKOKU (Variable Jump)
-    // Jeśli gracz leci w górę (Y < 0), ale puścił już przycisk/ekran, płynnie ucinamy pęd
     if (!isJumpPressed && scene.player.body.velocity.y < 0) {
         scene.player.body.setVelocityY(scene.player.body.velocity.y * 0.9); 
     }
 
-    // --- LOGIKA ANIMACJI ---
     if (scene.textures.exists('player')) {
         let currentAnim = scene.player.anims.currentAnim?.key;
 
         if (!scene.player.body.touching.down) {
             if (currentAnim !== 'jump') scene.player.play('jump');
-        } 
-        else if (moving) {
+        } else if (moving) {
             if (currentAnim === 'idle') {
                 scene.player.play('prepare');
             } else if (currentAnim === 'prepare' && scene.player.anims.getProgress() === 1) {
@@ -432,21 +358,18 @@ function handlePlayerMovement(scene) {
             } else if (currentAnim !== 'prepare' && currentAnim !== 'run') {
                 scene.player.play('run'); 
             }
-        } 
-        else {
+        } else {
             if (currentAnim !== 'idle') {
                 scene.player.play('idle');
             }
         }
     }
-    updateTelemetry(scene);
 }
 
 function updateCameraAndScores(scene, isEndless) {
-    // Jeśli gracz już zginął, nie wykonujemy reszty logiki kamery i punktacji
     if (scene.isDead) return;
 
-    let currentFloor = Math.max(0, Math.floor((630 - scene.player.y) / 120));
+    let currentFloor = Math.max(0, Math.floor((480 - scene.player.y) / 120));
     
     if (currentFloor > scene.highestFloor) {
         scene.highestFloor = currentFloor;
@@ -455,31 +378,28 @@ function updateCameraAndScores(scene, isEndless) {
         } else {
             scene.scoreText.setText('Piętro: ' + scene.highestFloor + ' / ' + scene.targetFloor);
             
-            // Warunek wygranej w trybie Story
             if (scene.highestFloor >= scene.targetFloor && !scene.gameWon) {
                 scene.gameWon = true;
-                scene.add.text(180, scene.cameras.main.scrollY + 320, 'WYGRANA!\nWitamy na Gdańskiej 19', { fontSize: '28px', fill: '#2ecc71', align: 'center', backgroundColor: '#000' }).setOrigin(0.5);
-                setTimeout(() => scene.scene.start('Menu'), 3000); // Powrót do menu po 3 sekundach
+                let winText = scene.add.text(180, scene.cameras.main.scrollY + 250, 'WYGRANA!\nWitamy na Gdańskiej 19', { fontSize: '28px', fill: '#2ecc71', align: 'center', backgroundColor: '#000' }).setOrigin(0.5);
+                scene.uiCamera.ignore(winText);
+                setTimeout(() => scene.scene.start('Menu'), 3000); 
             }
         }
     }
 
-    let targetCameraY = scene.player.y - config.height / 2;
+    let targetCameraY = scene.player.y - 250;
     if (targetCameraY < scene.cameras.main.scrollY) {
         scene.cameras.main.scrollY = targetCameraY;
     }
 
-    // Warunek przegranej
-    if (scene.player.y > scene.cameras.main.scrollY + config.height + 32) {
+    // Warunek porażki z animacją na środku ekranu!
+    if (scene.player.y > scene.cameras.main.scrollY + 500 + 32) {
         scene.isDead = true; 
         
         scene.player.body.checkCollision.none = true;
         scene.player.body.setCollideWorldBounds(false);
         
-        // Zmiana animacji na rozklapaną klatkę nr 10
-        if (scene.textures.exists('player')) {
-            scene.player.play('fall');
-        }
+        if (scene.textures.exists('player')) scene.player.play('fall');
 
         scene.player.body.setVelocityY(-1200);
         scene.player.body.setAccelerationX(0);
@@ -489,125 +409,6 @@ function updateCameraAndScores(scene, isEndless) {
             scene.cameras.main.scrollY = 0; 
             scene.scene.start('Menu');
         }, 2000); 
-    }
-}
-
-function updateTelemetry(scene) {
-    if (!SETTINGS.devMode || !scene.devStatsText) return;
-    
-    if (!SETTINGS.showStats) {
-        scene.devStatsText.setVisible(false);
-        return;
-    }
-    
-    scene.devStatsText.setVisible(true);
-
-    let currentSpeedX = Math.abs(scene.player.body.velocity.x).toFixed(0);
-
-    // Rejestrowanie wysokości bieżącego skoku
-    if (!scene.player.body.touching.down && scene.player.body.velocity.y < 0) {
-        if (scene.player.jumpStartY === undefined) {
-            scene.player.jumpStartY = scene.player.y;
-            scene.player.jumpStartXSpeed = currentSpeedX;
-        }
-        scene.player.currentJumpHeight = scene.player.jumpStartY - scene.player.y;
-    } else if (scene.player.body.touching.down) {
-        scene.player.jumpStartY = undefined; 
-    }
-
-    let lastHeight = (scene.player.currentJumpHeight || 0).toFixed(0);
-    let lastSpeed = (scene.player.jumpStartXSpeed || 0);
-
-    scene.devStatsText.setText(
-        `PREDKOSC X: ${currentSpeedX} / 600 px/s\n` +
-        `OSTATNI SKOK: ${lastHeight} px\n` +
-        `(Pęd przy wybiciu: ${lastSpeed})`
-    );
-}
-
-// --- SYSTEM COMBO ---
-
-function setupComboSystem(scene) {
-    scene.comboCount = 0;
-    scene.comboTimer = 0;
-    scene.maxComboTime = 2000; // 2 sekundy na kontynuację combo
-    scene.lastLandedFloor = 0;
-    scene.player.wasTouchingDown = true;
-    
-    // Tekst wyświetlający aktualne combo na środku ekranu
-    scene.comboText = scene.add.text(180, 150, '', {
-        fontSize: '36px', fill: '#f1c40f', fontStyle: 'bold', align: 'center', stroke: '#000', strokeThickness: 5
-    }).setOrigin(0.5).setScrollFactor(0).setAlpha(0).setDepth(100);
-}
-
-function handleCombo(scene, delta) {
-    // Obliczamy na którym piętrze fizycznie znajduje się gracz
-    let currentFloor = Math.max(0, Math.floor((630 - scene.player.y) / 120));
-
-    // Moment lądowania na platformie
-    if (scene.player.body.touching.down) {
-        if (!scene.player.wasTouchingDown) { // Właśnie wylądował
-            let floorsJumped = currentFloor - scene.lastLandedFloor;
-
-            // Inicjacja lub kontynuacja combo (skok o min. 2 piętra)
-            if (floorsJumped >= 2) {
-                scene.comboCount += floorsJumped;
-                scene.comboTimer = scene.maxComboTime;
-                
-                scene.comboText.setText('COMBO x' + scene.comboCount + '!');
-                scene.comboText.setAlpha(1);
-                scene.comboText.y = 150;
-                
-                // Efekt "pop" (powiększenia) przy uderzeniu
-                scene.tweens.add({
-                    targets: scene.comboText,
-                    scale: { from: 1.5, to: 1 },
-                    duration: 200,
-                    ease: 'Back.easeOut'
-                });
-            } 
-            // Jeśli gracz podskoczył tylko o 1 piętro lub spadł, a miał aktywne combo - kończymy je
-            else if ((floorsJumped <= 1) && scene.comboCount > 0) {
-                cashInCombo(scene);
-            }
-            
-            scene.lastLandedFloor = currentFloor;
-        }
-    }
-    scene.player.wasTouchingDown = scene.player.body.touching.down;
-
-    // Odliczanie czasu combo
-    if (scene.comboCount > 0) {
-        scene.comboTimer -= delta;
-        
-        // Cieniowanie tekstu pokazujące uciekający czas
-        scene.comboText.setAlpha(scene.comboTimer / scene.maxComboTime);
-        
-        if (scene.comboTimer <= 0) {
-            cashInCombo(scene);
-        }
-    }
-}
-
-function cashInCombo(scene) {
-    if (scene.comboCount > 0) {
-        // Punktacja rodem z Icy Tower (kwadrat ilości pięter)
-        let points = scene.comboCount * scene.comboCount; 
-        
-        scene.comboText.setText('+' + points + ' PKT!');
-        scene.comboText.setAlpha(1);
-        
-        // Animacja unoszącego się i znikającego napisu z punktami
-        scene.tweens.add({
-            targets: scene.comboText,
-            y: scene.comboText.y - 50,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power1'
-        });
-        
-        // Docelowo tutaj dodasz zmienną globalnego wyniku: scene.score += points
-        scene.comboCount = 0;
     }
 }
 
@@ -629,8 +430,5 @@ const config = {
     },
     scene: [Menu, Story, Endless] 
 };
-
-
-
 
 const game = new Phaser.Game(config);
